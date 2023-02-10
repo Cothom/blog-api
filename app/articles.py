@@ -27,18 +27,23 @@ class RequestArticle(BaseModel):
     title: str
     content: str
     creation: str | None
-    id: str
+    id: str | None  # On creation request, no idea is yet assigned to article
 
     @staticmethod
     def to_article(request: "RequestArticle") -> Article:
-        title = request.title
-        content = request.content
-        date = iso_string_to_datetime(request.creation)
-        id = request.id
-        return Article(content, title, date, UUID(id))
+        kwargs: dict[str, str | datetime | UUID] = {
+            "title": request.title,
+            "content": request.content,
+            "date": iso_string_to_datetime(request.creation),
+        }
+        if request.id:
+            kwargs["uuid"] = UUID(request.id)
+        return Article(**kwargs)  # type: ignore
 
 
 class ResponseArticle(RequestArticle):
+    id: str  # In a response, there is always already an id assigne to article
+
     @staticmethod
     def from_article(article: Article) -> "ResponseArticle":
         title = article.title

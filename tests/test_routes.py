@@ -71,7 +71,8 @@ class TestGetArticle(unittest.TestCase):
     @patch("app.routes.get_by_id")
     def test_raises_HTTPException(self, mock: MagicMock):
         mock.return_value = None, OperationType.READ
-        self.assertRaises(HTTPException, get_article, "does not exist")
+        with self.assertRaises(HTTPException):
+            get_article("does not exist")
 
     @patch("app.routes.get_by_id")
     def test_returns_article_if_exists(self, mock: MagicMock):
@@ -115,6 +116,19 @@ class TestNewArticle(unittest.TestCase):
                 "content": "b",
                 "creation": "01/01/2023",
                 "id": "deadbeef",
+            },
+        )  # type: ignore
+        self.assertEqual(201, response.status_code)
+
+    @patch("app.routes.create")
+    def test_returns_201_even_if_no_id_provided(self, mock: MagicMock):
+        mock.return_value = None
+        response: Response = client.post(
+            "/articles",
+            json={
+                "title": "a",
+                "content": "b",
+                "creation": "",
             },
         )  # type: ignore
         self.assertEqual(201, response.status_code)
