@@ -70,7 +70,9 @@ def new_article(article: RequestArticle, response: Response) -> None:
     """
     article_id, _ = create(article)
     # New created article's Id must be returned for consumer to re-access later
-    response.headers["Location"] = article_id
+    article_location: str = "/articles/%s" % article_id
+    response.headers["Location"] = article_location
+    logger.debug(f"Location header: {article_location}")
 
 
 @app.put("/articles/{article_id}", status_code=204)
