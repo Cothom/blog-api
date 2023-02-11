@@ -1,13 +1,17 @@
 """Entities handled by API and functions to manipulate them."""
 
 import enum
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel
 
+from app.exceptions import InvalidArticleIdError
 from app.utils import datetime_to_iso_string, iso_string_to_datetime
+
+logger = logging.getLogger(__name__)
 
 
 class OperationType(enum.Enum):
@@ -26,7 +30,10 @@ class Article:
     content: str
     title: str
     date: datetime
-    uuid: UUID = uuid4()
+    uuid: UUID | None = None
+
+    def __post_init__(self):
+        self.uuid = uuid4()
 
 
 class RequestArticle(BaseModel):
@@ -52,7 +59,9 @@ class RequestArticle(BaseModel):
             "content": request.content,
             "date": iso_string_to_datetime(request.creation),
         }
-        return Article(**kwargs)  # type: ignore
+        article: Article = Article(**kwargs)  # type: ignore
+        logger.debug(f"New article with {article.uuid} created")
+        return article
 
 
 class ResponseArticle(RequestArticle):
@@ -73,7 +82,7 @@ class ResponseArticle(RequestArticle):
         title: str = article.title
         content: str = article.content
         creation: str = datetime_to_iso_string(article.date)
-        id: str = article.uuid.hex
+        id: str = str(article.uuid)
         return ResponseArticle(
             content=content, title=title, creation=creation, id=id
         )
@@ -88,7 +97,12 @@ def _add(article: Article) -> None:
 
     Args:
         article (Article): article to store
+
+    Raises:
+        InvalidArticleIdError: If article does not have a valid uuid
     """
+    if not article.uuid:
+        raise InvalidArticleIdError("Trying to store article without uuid")
     _all[article.uuid] = article
 
 
@@ -111,7 +125,12 @@ def _update(old: Article, new: Article) -> None:
     Args:
         old (Article): Article to replace
         new (Article): New article
+
+    Raises:
+        InvalidArticleIdError: If article does not have a valid uuid
     """
+    if not old.uuid:
+        raise InvalidArticleIdError("Trying to store article without uuid")
     # UUID must be preserved when updating
     new.uuid = old.uuid
     _all[old.uuid] = new
@@ -155,6 +174,7 @@ def create(request: RequestArticle) -> tuple[str, OperationType]:
     Returns:
         OperationType: Operation type
     """
+    logger.debug("Creating article...")
     new: Article = RequestArticle.to_article(request)
     response: ResponseArticle = ResponseArticle.from_article(new)
     _add(new)
