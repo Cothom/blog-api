@@ -1,9 +1,11 @@
-import logging
+"""Configuration of logging module for the whole app"""
+
 import logging.config
 from typing import Any
 
+# Configuration dict
 config: dict[str, Any] = {
-    "version": 1,
+    "version": 1,  # 1 is the only accepted value
     "formatters": {
         "simple": {
             "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -18,6 +20,8 @@ config: dict[str, Any] = {
         }
     },
     "loggers": {
+        # Any module in 'app' package will inherit from this configuration
+        # if getting a logger with its own __name__ (e.g.: app.routes)
         "app": {
             "level": "DEBUG",
             "handlers": ["console"],
@@ -25,4 +29,5 @@ config: dict[str, Any] = {
     },
 }
 
+# Application of the configuration
 logging.config.dictConfig(config)
