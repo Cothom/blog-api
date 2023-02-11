@@ -25,9 +25,7 @@ class TestHelloWorld(unittest.TestCase):
 class TestGetAllArticles(unittest.TestCase):
     def setUp(self) -> None:
         now = datetime.now().isoformat()
-        self.req_article = RequestArticle(
-            content="c", title="t", creation=now, id=uuid4().hex
-        )
+        self.req_article = RequestArticle(content="c", title="t", creation=now)
         self.res_article = ResponseArticle(
             content="c", title="t", creation=now, id=uuid4().hex
         )
@@ -101,28 +99,39 @@ class TestGetArticle(unittest.TestCase):
 class TestNewArticle(unittest.TestCase):
     def setUp(self) -> None:
         now = datetime.now().isoformat()
-        self.req_article = RequestArticle(
-            content="c", title="t", creation=now, id=uuid4().hex
-        )
+        self.req_article = RequestArticle(content="c", title="t", creation=now)
         return super().setUp()
 
     @patch("app.routes.create")
     def test_returns_201_if_article_valid(self, mock: MagicMock):
-        mock.return_value = None
+        mock.return_value = "new id", OperationType.CREATED
         response: Response = client.post(
             "/articles",
             json={
                 "title": "a",
                 "content": "b",
                 "creation": "01/01/2023",
-                "id": "deadbeef",
             },
         )  # type: ignore
         self.assertEqual(201, response.status_code)
 
     @patch("app.routes.create")
-    def test_returns_201_even_if_no_id_provided(self, mock: MagicMock):
-        mock.return_value = None
+    def test_set_location_if_article_valid(self, mock: MagicMock):
+        mock.return_value = "new id", OperationType.CREATED
+        response: Response = client.post(
+            "/articles",
+            json={
+                "title": "a",
+                "content": "b",
+                "creation": "01/01/2023",
+            },
+        )  # type: ignore
+        self.assertEqual(201, response.status_code)
+        self.assertTrue("location" in response.headers.keys())
+
+    @patch("app.routes.create")
+    def test_returns_201_if_no_id_provided(self, mock: MagicMock):
+        mock.return_value = "new id", OperationType.CREATED
         response: Response = client.post(
             "/articles",
             json={
@@ -136,7 +145,7 @@ class TestNewArticle(unittest.TestCase):
     @patch("app.routes.create")
     def test_returns_422_if_article_invalid(self, mock: MagicMock):
         mock.return_value = None
-        # Mandatory fields "title" and "id" are missing
+        # Mandatory fields "title" is missing
         response: Response = client.post(
             "/articles", json={"content": "b", "creation": "01/01/2023"}
         )  # type: ignore

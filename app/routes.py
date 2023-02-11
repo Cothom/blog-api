@@ -62,13 +62,15 @@ def get_article(article_id: str) -> ResponseArticle:
 
 
 @app.post("/articles", status_code=201)
-def new_article(article: RequestArticle) -> None:
+def new_article(article: RequestArticle, response: Response) -> None:
     """Create a new article
 
     Args:
         article (RequestArticle): Article to create
     """
-    create(article)
+    article_id, _ = create(article)
+    # New created article's Id must be returned for consumer to re-access later
+    response.headers["Location"] = article_id
 
 
 @app.put("/articles/{article_id}", status_code=204)

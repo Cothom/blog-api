@@ -35,7 +35,7 @@ class RequestArticle(BaseModel):
     title: str
     content: str
     creation: str | None
-    id: str | None  # On creation request, no idea is yet assigned to article
+    # On creation request, no idea is yet assigned to article
 
     @staticmethod
     def to_article(request: "RequestArticle") -> Article:
@@ -47,13 +47,11 @@ class RequestArticle(BaseModel):
         Returns:
             Article: The converted article
         """
-        kwargs: dict[str, str | datetime | UUID] = {
+        kwargs: dict[str, str | datetime] = {
             "title": request.title,
             "content": request.content,
             "date": iso_string_to_datetime(request.creation),
         }
-        if request.id:
-            kwargs["uuid"] = UUID(request.id)
         return Article(**kwargs)  # type: ignore
 
 
@@ -72,10 +70,10 @@ class ResponseArticle(RequestArticle):
         Returns:
             ResponseArticle: The converted article
         """
-        title = article.title
-        content = article.content
-        creation = datetime_to_iso_string(article.date)
-        id = article.uuid.hex
+        title: str = article.title
+        content: str = article.content
+        creation: str = datetime_to_iso_string(article.date)
+        id: str = article.uuid.hex
         return ResponseArticle(
             content=content, title=title, creation=creation, id=id
         )
@@ -103,7 +101,7 @@ def _get(id: str) -> Article | None:
     Returns:
         Article | None: Fetched article if exists, None otherwise
     """
-    uuid = UUID(id)
+    uuid: UUID = UUID(id)
     return _all.get(uuid, None)
 
 
@@ -148,7 +146,7 @@ def get_by_id(id: str) -> tuple[ResponseArticle | None, OperationType]:
         return None, OperationType.READ
 
 
-def create(request: RequestArticle) -> OperationType:
+def create(request: RequestArticle) -> tuple[str, OperationType]:
     """Create a new article
 
     Args:
@@ -157,9 +155,10 @@ def create(request: RequestArticle) -> OperationType:
     Returns:
         OperationType: Operation type
     """
-    new = RequestArticle.to_article(request)
+    new: Article = RequestArticle.to_article(request)
+    response: ResponseArticle = ResponseArticle.from_article(new)
     _add(new)
-    return OperationType.CREATED
+    return response.id, OperationType.CREATED
 
 
 def update(id: str, request: RequestArticle) -> OperationType:
@@ -172,8 +171,8 @@ def update(id: str, request: RequestArticle) -> OperationType:
     Returns:
         OperationType: Operation type indicating if it was created or updated
     """
-    old = _get(id)
-    new = RequestArticle.to_article(request)
+    old: Article | None = _get(id)
+    new: Article = RequestArticle.to_article(request)
     if old:
         _update(old, new)
         return OperationType.UPDATED

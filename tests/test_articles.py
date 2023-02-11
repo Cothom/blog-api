@@ -26,7 +26,7 @@ class TestRequestArticle(unittest.TestCase):
         self.now_str = self.now.isoformat()
         self.uuid = uuid4()
         self.req_article = RequestArticle(
-            content="c", title="t", creation=self.now_str, id=self.uuid.hex
+            content="c", title="t", creation=self.now_str
         )
         self.article = Article(
             content="c", title="t", date=self.now, uuid=self.uuid
@@ -34,10 +34,12 @@ class TestRequestArticle(unittest.TestCase):
         return super().setUp()
 
     @patch("app.articles.iso_string_to_datetime")
-    def test_to_article_converts_correctly(self, mock: MagicMock):
-        mock.return_value = self.now
+    def test_to_article_converts_correctly(self, mock_iso_to_date: MagicMock):
+        mock_iso_to_date.return_value = self.now
         expected = self.article
         output = RequestArticle.to_article(self.req_article)
+        # Nested call to uuid4 cannot be patched
+        output.uuid = self.uuid
         self.assertEqual(expected, output)
 
 
@@ -99,7 +101,7 @@ class TestPublicFunctions(unittest.TestCase):
             content="c", title="t", date=self.now, uuid=self.uuid
         )
         self.req_article = RequestArticle(
-            content="c", title="t", creation=self.now_str, id=self.req_id
+            content="c", title="t", creation=self.now_str
         )
         self.res_article = ResponseArticle(
             content="c", title="t", creation=self.now_str, id=self.req_id
@@ -131,10 +133,11 @@ class TestPublicFunctions(unittest.TestCase):
     def test_create(self, mock_to_article: MagicMock, mock__add: MagicMock):
         def _add_side_effect(_):
             _all[self.uuid] = self.article
+            _all[self.uuid].uuid = self.uuid
 
         mock_to_article.return_value = self.article
         mock__add.side_effect = _add_side_effect
-        op = create(self.req_article)
+        _, op = create(self.req_article)
         self.assertEqual(_all[self.uuid], self.article)
         self.assertEqual(OperationType.CREATED, op)
 
