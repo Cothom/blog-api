@@ -1,11 +1,11 @@
 import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
 
-from fastapi import Response
 from fastapi.testclient import TestClient
+from httpx import Response
 
+from app.articles import ArticleId
 from app.routes import *
 
 client = TestClient(app)
@@ -27,33 +27,33 @@ class TestGetAllArticles(unittest.TestCase):
         now = datetime.now().isoformat()
         self.req_article = RequestArticle(content="c", title="t", creation=now)
         self.res_article = ResponseArticle(
-            content="c", title="t", creation=now, id=uuid4().hex
+            content="c", title="t", creation=now, id=ArticleId().as_str()
         )
         return super().setUp()
 
     @patch("app.routes.get_all")
     def test_returns_empty_when_no_articles(self, mock: MagicMock):
-        mock.return_value = [], OperationType.READ
+        mock.return_value = []
         expected = []
         output = get_all_articles()
         self.assertEqual(expected, output)
 
     @patch("app.routes.get_all")
     def test_get_all_articles(self, mock: MagicMock):
-        mock.return_value = [self.res_article], OperationType.READ
+        mock.return_value = [self.res_article]
         expected: list[ResponseArticle] = [self.res_article]
         output = get_all_articles()
         self.assertEqual(expected, output)
 
     @patch("app.routes.get_all")
     def test_returns_200_even_if_empty(self, mock: MagicMock):
-        mock.return_value = [], OperationType.READ
+        mock.return_value = []
         response: Response = client.get("/articles")  # type: ignore
         self.assertEqual(200, response.status_code)
 
     @patch("app.routes.get_all")
     def test_returns_200_if_not_empty(self, mock: MagicMock):
-        mock.return_value = [self.res_article], OperationType.READ
+        mock.return_value = [self.res_article]
         response: Response = client.get("/articles")  # type: ignore
         self.assertEqual(200, response.status_code)
 
@@ -62,36 +62,36 @@ class TestGetArticle(unittest.TestCase):
     def setUp(self) -> None:
         now = datetime.now().isoformat()
         self.res_article = ResponseArticle(
-            content="c", title="t", creation=now, id=uuid4().hex
+            content="c", title="t", creation=now, id=ArticleId().as_str()
         )
         return super().setUp()
 
     @patch("app.routes.get_by_id")
     def test_raises_HTTPException(self, mock: MagicMock):
-        mock.return_value = None, OperationType.READ
+        mock.return_value = None
         with self.assertRaises(HTTPException):
             get_article("does not exist")
 
     @patch("app.routes.get_by_id")
     def test_returns_article_if_exists(self, mock: MagicMock):
-        mock.return_value = self.res_article, OperationType.READ
+        mock.return_value = self.res_article
         expected = self.res_article
         output = get_article("does exist")
         self.assertEqual(expected, output)
 
     @patch("app.routes.get_by_id")
     def test_returns_200_if_found(self, mock: MagicMock):
-        mock.return_value = self.res_article, OperationType.READ
+        mock.return_value = self.res_article
         response: Response = client.get(
-            "/articles/" + str(uuid4())
+            "/articles/" + ArticleId().as_str()
         )  # type: ignore
         self.assertEqual(200, response.status_code)
 
     @patch("app.routes.get_by_id")
     def test_returns_404_if_not_found(self, mock: MagicMock):
-        mock.return_value = None, OperationType.READ
+        mock.return_value = None
         response: Response = client.get(
-            "/articles/" + str(uuid4())
+            "/articles/" + ArticleId().as_str()
         )  # type: ignore
         self.assertEqual(404, response.status_code)
 
@@ -104,7 +104,7 @@ class TestNewArticle(unittest.TestCase):
 
     @patch("app.routes.create")
     def test_returns_201_if_article_valid(self, mock: MagicMock):
-        mock.return_value = "new id", OperationType.CREATED
+        mock.return_value = "new id"
         response: Response = client.post(
             "/articles",
             json={
@@ -117,7 +117,7 @@ class TestNewArticle(unittest.TestCase):
 
     @patch("app.routes.create")
     def test_set_location_if_article_valid(self, mock: MagicMock):
-        mock.return_value = "new id", OperationType.CREATED
+        mock.return_value = "new id"
         response: Response = client.post(
             "/articles",
             json={
@@ -131,7 +131,7 @@ class TestNewArticle(unittest.TestCase):
 
     @patch("app.routes.create")
     def test_returns_201_if_no_id_provided(self, mock: MagicMock):
-        mock.return_value = "new id", OperationType.CREATED
+        mock.return_value = "new id"
         response: Response = client.post(
             "/articles",
             json={
@@ -160,29 +160,31 @@ class TestNewArticle(unittest.TestCase):
 
 class TestUpdateArticle(unittest.TestCase):
     @patch("app.routes.update")
-    def test_returns_201_if_article_created(self, mock: MagicMock):
-        mock.return_value = OperationType.CREATED
+    def test_returns_404_if_article_does_not_exist(self, mock: MagicMock):
+        mock.side_effect = ArticleNotFoundError()
+        article_id = ArticleId()
         response: Response = client.put(
-            "/articles/" + str(uuid4()),
+            "/articles/" + article_id.as_str(),
             json={
                 "title": "a",
                 "content": "b",
                 "creation": "01/01/2023",
-                "id": uuid4().hex,
+                "id": article_id.as_str(),
             },
-        )  # type: ignore
-        self.assertEqual(201, response.status_code)
+        )
+        self.assertEqual(404, response.status_code)
 
     @patch("app.routes.update")
     def test_returns_204_if_article_updated(self, mock: MagicMock):
-        mock.return_value = OperationType.UPDATED
+        mock.return_value = None
+        article_id = ArticleId()
         response: Response = client.put(
-            "/articles/" + str(uuid4()),
+            "/articles/" + article_id.as_str(),
             json={
                 "title": "a",
                 "content": "b",
                 "creation": "01/01/2023",
-                "id": uuid4().hex,
+                "id": article_id.as_str(),
             },
         )  # type: ignore
         self.assertEqual(204, response.status_code)
@@ -192,7 +194,7 @@ class TestUpdateArticle(unittest.TestCase):
         mock.return_value = None
         # Mandatory fields "title" and "id" are missing
         response: Response = client.put(
-            "/articles/" + uuid4().hex,
+            "/articles/" + ArticleId().as_str(),
             json={"content": "b", "creation": "01/01/2023"},
         )  # type: ignore
         self.assertEqual(422, response.status_code)
@@ -201,6 +203,6 @@ class TestUpdateArticle(unittest.TestCase):
     def test_returns_422_if_request_empty(self, mock: MagicMock):
         mock.return_value = None
         response: Response = client.put(
-            "/articles/" + uuid4().hex
+            "/articles/" + ArticleId().as_str()
         )  # type: ignore
         self.assertEqual(422, response.status_code)

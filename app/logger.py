@@ -8,7 +8,7 @@ config: dict[str, Any] = {
     "version": 1,  # 1 is the only accepted value
     "formatters": {
         "simple": {
-            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            "format": "%(asctime)s - %(name)s.%(funcName)s:%(lineno)s - %(levelname)s - %(message)s"
         }
     },
     "handlers": {
@@ -27,6 +27,7 @@ config: dict[str, Any] = {
             "handlers": ["console"],
         }
     },
+    "root": {"level": "DEBUG"},
 }
 
 # Application of the configuration

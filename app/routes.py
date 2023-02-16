@@ -4,15 +4,9 @@ import logging
 
 from fastapi import FastAPI, HTTPException, Response
 
-from app.articles import (
-    OperationType,
-    RequestArticle,
-    ResponseArticle,
-    create,
-    get_all,
-    get_by_id,
-    update,
-)
+from app.articles import (RequestArticle, ResponseArticle, create, get_all,
+                          get_by_id, update)
+from app.exceptions import ArticleNotFoundError, InvalidRequestedIdError
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +31,8 @@ def get_all_articles() -> list[ResponseArticle]:
     Returns:
         list[ResponseArticle]: The list of articles to return
     """
-    articles, _ = get_all()
+    articles = get_all()
+    logger.debug(f"Returning {len(articles)} articles")
     return articles
 
 
@@ -49,12 +44,19 @@ def get_article(article_id: str) -> ResponseArticle:
         article_id (str): Id of the requested article
 
     Raises:
-        HTTPException: Returns 404 if article is not found
+        HTTPException: Returns 400 if article Id is invalid. Returns 404 if article is not found
 
     Returns:
         ResponseArticle: Requested article
     """
-    article, _ = get_by_id(article_id)
+    logger.debug(f"Looking for article with id {article_id}")
+    try:
+        article = get_by_id(article_id)
+    except InvalidRequestedIdError as irie:
+        raise HTTPException(status_code=400, detail=irie.message)
+    except ArticleNotFoundError as anfe:
+        raise HTTPException(status_code=404, detail=anfe.message)
+
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
 
@@ -68,7 +70,8 @@ def new_article(article: RequestArticle, response: Response) -> None:
     Args:
         article (RequestArticle): Article to create
     """
-    article_id, _ = create(article)
+    logger.info("Creating article...")
+    article_id = create(article)
     # New created article's Id must be returned for consumer to re-access later
     article_location: str = "/articles/%s" % article_id
     response.headers["Location"] = article_location
@@ -88,6 +91,9 @@ def update_article(
         article (RequestArticle): New content for the article
         response (Response): Arg provided by FastAPI to edit HTTP code
     """
-    op: OperationType = update(article_id, article)
-    if op == OperationType.CREATED:
-        response.status_code = 201
+    try:
+        update(article_id, article)
+    except InvalidRequestedIdError as irie:
+        raise HTTPException(status_code=400, detail=irie.message)
+    except ArticleNotFoundError as anfe:
+        raise HTTPException(status_code=404, detail=anfe.message)

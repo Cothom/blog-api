@@ -1,11 +1,15 @@
+import logging
 from unittest import TestCase
 
 from fastapi.testclient import TestClient
 from httpx import Response
 
+import app.logger
 from app.routes import app
 
 client = TestClient(app)
+
+log = logging.getLogger(__name__)
 
 
 class TestCreateAndGet(TestCase):
@@ -22,6 +26,7 @@ class TestCreateAndGet(TestCase):
         self.assertEqual(201, response.status_code)
         self.assertIn("location", response.headers.keys())
         location = response.headers["location"]
+        log.debug(f"Returned location: {location}")
         response = client.get(location)
         self.assertEqual(200, response.status_code)
         response_body = response.json()

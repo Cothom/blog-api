@@ -1,6 +1,6 @@
 """Entities handled by API and functions to manipulate them."""
 
-import enum
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,32 +8,65 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel
 
-from app.exceptions import InvalidArticleIdError
+from app.exceptions import (ArticleNotFoundError, InvalidArticleIdError,
+                            InvalidRequestedIdError)
 from app.utils import datetime_to_iso_string, iso_string_to_datetime
 
 logger = logging.getLogger(__name__)
 
 
-class OperationType(enum.Enum):
-    """Classify the operation that is done on stored entities"""
+class ArticleId:
+    def __init__(self, /, id: str | None = None, uuid: UUID | None = None):
+        """At most, only one of "id" and "uuid" must be provided.
+        If both are provided, "uuid" will be used and "id" will be discarded.
+        If none is provided, a new UUID will be generated.
 
-    CREATED = 0
-    READ = 1
-    UPDATED = 2
-    DELETED = 3
+        Args:
+            id (str | None, optional): String formatted UUID. Defaults to None.
+            uuid (UUID | None, optional): UUID object. Defaults to None.
+        """
+        if id is None:
+            self.uuid: UUID = uuid or uuid4()
+        else:
+            try:
+                self.uuid: UUID = UUID(id)
+            except ValueError:
+                raise InvalidArticleIdError(f"Id '{id}' is not a valid UUID")
+
+    def as_str(self):
+        return self.__str__()
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __str__(self):
+        return str(self.uuid)  # '12345678-9012-3456-7890-123456789012'
+
+    def __hash__(self) -> int:
+        return hash(self.uuid)
+
+    def __eq__(self, __o: object) -> bool:
+        return isinstance(__o, ArticleId) and __o.uuid == self.uuid
 
 
 @dataclass
 class Article:
     """Data class representing an article of the blog."""
 
-    content: str
-    title: str
-    date: datetime
-    uuid: UUID | None = None
+    def __init__(
+        self,
+        content: str,
+        title: str,
+        date: datetime,
+        id: ArticleId | None = None,
+    ):
+        self.content: str = content
+        self.title: str = title
+        self.date: datetime = date
+        self.id: ArticleId = id or ArticleId()
 
-    def __post_init__(self):
-        self.uuid = uuid4()
+    def __repr__(self) -> str:
+        return json.dumps(self.__dict__, default=str, indent=4)
 
 
 class RequestArticle(BaseModel):
@@ -41,11 +74,14 @@ class RequestArticle(BaseModel):
 
     title: str
     content: str
-    creation: str | None
-    # On creation request, no idea is yet assigned to article
+    creation: str | None = None
+    id: str | None = None
+    # On creation request, no id is yet assigned to article
 
     @staticmethod
-    def to_article(request: "RequestArticle") -> Article:
+    def to_article(
+        request: "RequestArticle", id: ArticleId | None = None
+    ) -> Article:
         """Converts an instance of this class into a new instance of Article
 
         Args:
@@ -54,20 +90,23 @@ class RequestArticle(BaseModel):
         Returns:
             Article: The converted article
         """
-        kwargs: dict[str, str | datetime] = {
+        kwargs: dict[str, str | datetime | ArticleId] = {
             "title": request.title,
             "content": request.content,
             "date": iso_string_to_datetime(request.creation),
         }
+        if id:
+            kwargs["id"] = id
+        elif request.id:
+            kwargs["id"] = request.id
+
         article: Article = Article(**kwargs)  # type: ignore
-        logger.debug(f"New article with {article.uuid} created")
+        logger.debug(f"New article with {article.id} created")
         return article
 
 
 class ResponseArticle(RequestArticle):
     """Class representing an article the way it is returned to API consumer"""
-
-    id: str  # In a response, there is always already an id assigned to article
 
     @staticmethod
     def from_article(article: Article) -> "ResponseArticle":
@@ -79,17 +118,17 @@ class ResponseArticle(RequestArticle):
         Returns:
             ResponseArticle: The converted article
         """
+        id: str = article.id.as_str()
         title: str = article.title
         content: str = article.content
         creation: str = datetime_to_iso_string(article.date)
-        id: str = str(article.uuid)
         return ResponseArticle(
             content=content, title=title, creation=creation, id=id
         )
 
 
 # Represents the in-memory storage
-_all: dict[UUID, Article] = {}
+_all: dict[ArticleId, Article] = {}
 
 
 def _add(article: Article) -> None:
@@ -97,16 +136,11 @@ def _add(article: Article) -> None:
 
     Args:
         article (Article): article to store
-
-    Raises:
-        InvalidArticleIdError: If article does not have a valid uuid
     """
-    if not article.uuid:
-        raise InvalidArticleIdError("Trying to store article without uuid")
-    _all[article.uuid] = article
+    _all[article.id] = article
 
 
-def _get(id: str) -> Article | None:
+def _get(id: ArticleId) -> Article | None:
     """Fetch the article corresponding to given Id from storage if exists
 
     Args:
@@ -115,8 +149,10 @@ def _get(id: str) -> Article | None:
     Returns:
         Article | None: Fetched article if exists, None otherwise
     """
-    uuid: UUID = UUID(id)
-    return _all.get(uuid, None)
+    logger.debug(f"Looking for article with id {id}")
+    logger.debug(f"Storage: {_all}")
+    result: Article | None = _all.get(id, None)
+    return result
 
 
 def _update(old: Article, new: Article) -> None:
@@ -125,77 +161,84 @@ def _update(old: Article, new: Article) -> None:
     Args:
         old (Article): Article to replace
         new (Article): New article
-
-    Raises:
-        InvalidArticleIdError: If article does not have a valid uuid
     """
-    if not old.uuid:
-        raise InvalidArticleIdError("Trying to store article without uuid")
-    # UUID must be preserved when updating
-    new.uuid = old.uuid
-    _all[old.uuid] = new
+    # Id must be preserved when updating
+    new.id = old.id
+    _all[old.id] = new
 
 
-def get_all() -> tuple[list[ResponseArticle], OperationType]:
+def get_all() -> list[ResponseArticle]:
     """Get all stored articles and return them as ResponseArticle objects
     along with an OperationType
 
     Returns:
-        tuple[list[ResponseArticle], OperationType]: All articles and operation
+        list[ResponseArticle]: All articles
     """
-    return (
-        [ResponseArticle.from_article(article) for article in _all.values()],
-        OperationType.READ,
-    )
+    return [ResponseArticle.from_article(article) for article in _all.values()]
 
 
-def get_by_id(id: str) -> tuple[ResponseArticle | None, OperationType]:
+def get_by_id(id: str) -> ResponseArticle:
     """Get one article from storage if exists
 
     Args:
         id (str): Id of the article to get
 
+    Raises:
+        InvalidRequestedIdError: If provided argument 'id' is invalid.
+
     Returns:
-        tuple[ResponseArticle | None, OperationType]: Article and operation
+        ResponseArticle | None: Article
     """
-    article: Article | None = _get(id)
-    if article is not None:
-        return ResponseArticle.from_article(article), OperationType.READ
+    try:
+        article_id: ArticleId = ArticleId(id=id)
+    except InvalidArticleIdError:
+        raise InvalidRequestedIdError(f"Id '{id}' is not a valid article Id")
+
+    article: Article | None = _get(article_id)
+    if article:
+        return ResponseArticle.from_article(article)
     else:
-        return None, OperationType.READ
+        raise ArticleNotFoundError(f"Id '{id}' doest not exist.")
 
 
-def create(request: RequestArticle) -> tuple[str, OperationType]:
+def create(request: RequestArticle) -> str:
     """Create a new article
 
     Args:
         request (RequestArticle): Article to create
 
     Returns:
-        OperationType: Operation type
+        ArticleId: Id of newly created article
     """
     logger.debug("Creating article...")
     new: Article = RequestArticle.to_article(request)
     response: ResponseArticle = ResponseArticle.from_article(new)
     _add(new)
-    return response.id, OperationType.CREATED
+    if not response.id:
+        # Mainly for type checking, that sould never happen.
+        raise InvalidArticleIdError("Article Id is invalid")
+    return response.id
 
 
-def update(id: str, request: RequestArticle) -> OperationType:
-    """Update the article with given Id if exists, create it otherwise
+def update(id: str, request: RequestArticle) -> None:
+    """Update the article with given Id if it exists.
 
     Args:
         id (str): Id of the article to update
         request (RequestArticle): New article
 
-    Returns:
-        OperationType: Operation type indicating if it was created or updated
+    Raises:
+        InvalidRequestedIdError: If provided argument 'id' is invalid.
+        ArticleNotFoundError: If provided argument 'id' cannot be found.
     """
-    old: Article | None = _get(id)
-    new: Article = RequestArticle.to_article(request)
+    try:
+        article_id: ArticleId = ArticleId(id=id)
+    except InvalidArticleIdError:
+        raise InvalidRequestedIdError(f"Id '{id}' is not a valid article Id")
+
+    old: Article | None = _get(article_id)
     if old:
+        new: Article = RequestArticle.to_article(request)
         _update(old, new)
-        return OperationType.UPDATED
     else:
-        _add(new)
-        return OperationType.CREATED
+        raise ArticleNotFoundError(f"Id '{id}' doest not exist.")
